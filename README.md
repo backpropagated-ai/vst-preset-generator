@@ -201,6 +201,18 @@ thread — the UI stays responsive), review the mapped parameters in a table, th
 **Save…** through a file dialog. The **Settings** panel stores each provider's
 API key in the OS keychain (one key row per provider).
 
+<p align="center">
+  <img src="docs/assets/app_generated.png" alt="DeepSynth Preset Desktop App Preview" width="700">
+  <br>
+  <em>DeepSynth Preset Desktop App - Parameter Generation Preview</em>
+</p>
+
+<p align="center">
+  <img src="docs/assets/app_settings.png" alt="DeepSynth Preset Settings Panel" width="700">
+  <br>
+  <em>DeepSynth Preset Desktop App - Settings Panel</em>
+</p>
+
 ---
 
 ## The Surge XT format
