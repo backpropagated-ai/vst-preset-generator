@@ -22,7 +22,7 @@ wgpu = { version = "27", default-features = false, features = ["metal", "gles"] 
 preset-core = { path = "../preset-core" }
 serde_json = { workspace = true }
 # eframe ~0.33 to match the repo toolchain. Standalone — no patchbee deps.
-eframe = { version = "0.33", default-features = false, features = ["default_fonts", "glow", "wgpu", "persistence"] }
+eframe = { version = "0.35", default-features = false, features = ["default_fonts", "glow", "wgpu", "persistence"] }
 egui = "0.33"
 # Native save-file dialog.
 rfd = "0.15"
