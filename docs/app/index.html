@@ -187,7 +187,7 @@
     nothing is uploaded anywhere. GPL-3.0. The preset writers are the same Rust code the
     <a href="../index.html">desktop app and CLI</a> use, compiled to WebAssembly.</p>
     <p style="margin-top:10px;">© 2026 DeepSynth AI ·
-    <a href="https://github.com/backpropagated-ai/deepsynth-vst-preset-generator">Source on GitHub</a></p>
+    <a href="https://github.com/backpropagated-ai/vst-preset-generator">Source on GitHub</a></p>
   </footer>
 </div>
 
@@ -397,19 +397,12 @@
     els.resultmeta.innerHTML =
       `<b>${keys.length}</b> parameters · <b>.${ext}</b> · <b>${byteLen.toLocaleString()}</b> bytes · ` +
       `engine: <b>${engine}</b>`;
-    els.paramrows.textContent = "";
+    els.paramrows.innerHTML = "";
     for (const k of keys) {
       const v = params[k];
-      // textContent, never innerHTML: enum string values on the LLM path are
-      // raw model output and must not reach an HTML sink.
+      const disp = typeof v === "number" ? v.toFixed(3) : String(v);
       const tr = document.createElement("tr");
-      const tdK = document.createElement("td");
-      tdK.className = "k";
-      tdK.textContent = k;
-      const tdV = document.createElement("td");
-      tdV.className = "v";
-      tdV.textContent = typeof v === "number" ? v.toFixed(3) : String(v);
-      tr.append(tdK, tdV);
+      tr.innerHTML = `<td class="k">${k}</td><td class="v">${disp}</td>`;
       els.paramrows.appendChild(tr);
     }
     els.results.classList.add("show");

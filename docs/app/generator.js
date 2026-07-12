@@ -21,12 +21,6 @@ import { CATEGORY_ANCHORS, MODIFIER_AXES } from "./anchors.js";
 
 // transformers.js is loaded lazily (see loadModel) so the keyword path never
 // pays for the CDN import.
-//
-// Supply-chain note: dynamic import() cannot carry an SRI integrity hash, so
-// the only mitigations are (a) pinning an exact version — never a range or
-// `latest` — and (b) the fallback paths: if the CDN is unreachable or serves
-// something broken, the page degrades to keyword matching rather than failing.
-// If you change this URL, keep it exact-version-pinned.
 const TRANSFORMERS_URL = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0";
 
 // ---------------------------------------------------------------------------

@@ -14,7 +14,7 @@ version = "0.1.0"
 edition = "2021"
 license = "GPL-3.0-only"
 authors = ["DeepSynth AI"]
-repository = "https://github.com/backpropagated-ai/deepsynth-vst-preset-generator"
+repository = "https://github.com/backpropagated-ai/vst-preset-generator"
 rust-version = "1.75"
 
 [workspace.dependencies]

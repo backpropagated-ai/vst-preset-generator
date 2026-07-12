@@ -71,23 +71,28 @@ struct Cli {
     #[arg(long)]
     schema: bool,
 
-    /// LLM provider: claude | gemini.
+    /// LLM provider: claude | gemini | openai | openrouter | ollama | lmstudio.
+    /// The last two are LOCAL servers (no API key needed); point them at a
+    /// non-default host with the matching *_BASE_URL env var.
     #[arg(long, default_value = "claude")]
     provider: String,
 
-    /// Override the provider's default model (claude-opus-4-8 / gemini-3.5-flash).
+    /// Override the provider's default model. Required in practice for local
+    /// backends (e.g. --provider ollama --model llama3.1, or an LM Studio model id).
     #[arg(long)]
     model: Option<String>,
 
     /// API key (highest priority; else the provider's env var, else OS keychain).
-    /// Prefer the env var/keychain: a key on the command line lands in shell
-    /// history and is visible in the process list.
     #[arg(long)]
     api_key: Option<String>,
 
     /// Also write the mapped parameter values to this JSON file (for inspection).
     #[arg(long)]
     dump_params: Option<PathBuf>,
+
+    /// Suppress the ASCII banner and result panel (decoration) on stderr.
+    #[arg(long)]
+    quiet: bool,
 }
 
 fn main() {
@@ -106,7 +111,7 @@ fn run() -> Result<()> {
         )
     })?;
 
-    // --schema: print and exit.
+    // --schema: pure JSON on stdout, no decoration, and exit.
     if cli.schema {
         let mapper = synth.mapper();
         let schema = build_schema(mapper.as_ref());
@@ -114,10 +119,20 @@ fn run() -> Result<()> {
         return Ok(());
     }
 
+    // Decoration (banner + result panel) is stderr-only and only when stderr is
+    // an interactive terminal, NO_COLOR is unset, and --quiet was not passed.
+    let decorate = decorate_stderr(cli.quiet);
+    if decorate {
+        print_banner();
+    }
+
     let meta = PresetMeta {
         name: cli.name.clone(),
         ..Default::default()
     };
+
+    // Provider · model for the result panel (only for the online path).
+    let mut provider_model: Option<String> = None;
 
     // Determine the mapped params by the chosen path.
     let (bytes, mapped) = if cli.defaults {
@@ -132,26 +147,32 @@ fn run() -> Result<()> {
         let bytes = preset_core::write_preset(synth, &meta, &mapped)?;
         (bytes, mapped)
     } else {
-        // Online: prompt -> provider (Claude/Gemini) -> writer.
+        // Online: prompt -> provider -> writer.
         let provider = Provider::from_id(&cli.provider).ok_or_else(|| {
             anyhow!(
-                "unknown provider '{}' (expected: claude, gemini)",
+                "unknown provider '{}' (expected: claude, gemini, openai, openrouter, \
+                 ollama, lmstudio)",
                 cli.provider
             )
         })?;
         let prompt = cli.prompt.as_deref().ok_or_else(|| {
             anyhow!("a prompt is required (or use --params-json / --defaults / --schema)")
         })?;
-        let (key, source) = provider
-            .resolve_key(cli.api_key.as_deref())
-            .ok_or_else(|| {
-                anyhow!(
-                    "no API key: pass --api-key, set {}, or store one in the OS keychain",
-                    provider.env_var()
-                )
-            })?;
+        // Local backends (Ollama, LM Studio) need no key; hosted ones do.
+        let resolved = provider.resolve_key(cli.api_key.as_deref());
+        let key = match resolved {
+            Some((k, source)) => {
+                eprintln!("Using API key from {}.", describe_source(provider, source));
+                k
+            }
+            None if !provider.requires_key() => String::new(),
+            None => bail!(
+                "no API key: pass --api-key, set {}, or store one in the OS keychain",
+                provider.env_var()
+            ),
+        };
         let model = cli.model.as_deref().unwrap_or(provider.default_model());
-        eprintln!("Using API key from {}.", describe_source(provider, source));
+        provider_model = Some(format!("{} · {}", provider.id(), model));
         eprintln!(
             "Generating {} preset via {} ({}) for: {:?}",
             synth.id(),
@@ -177,7 +198,12 @@ fn run() -> Result<()> {
         .clone()
         .unwrap_or_else(|| PathBuf::from(format!("{}.{}", sanitize(&cli.name), synth.extension())));
     std::fs::write(&out, &bytes).with_context(|| format!("writing {}", out.display()))?;
-    eprintln!("Wrote {} ({} bytes).", out.display(), bytes.len());
+    // Machine-readable result line on stdout (scripts can capture this); the
+    // pretty box panel is decoration on stderr.
+    if decorate {
+        print_result_panel(&out.display().to_string(), bytes.len(), mapped.len(), provider_model);
+    }
+    println!("Wrote {} ({} bytes).", out.display(), bytes.len());
 
     if let Some(dump) = &cli.dump_params {
         let json = mapped_to_json(&mapped);
@@ -233,6 +259,82 @@ fn describe_source(provider: Provider, source: KeySource) -> String {
         KeySource::Env => format!("the {} environment variable", provider.env_var()),
         KeySource::Keychain => "the OS keychain".to_string(),
     }
+}
+
+/// Whether stderr should carry the ASCII banner and result panel: only when it
+/// is an interactive terminal, NO_COLOR is unset, and --quiet was not passed.
+fn decorate_stderr(quiet: bool) -> bool {
+    use std::io::IsTerminal;
+    !quiet && std::env::var_os("NO_COLOR").is_none() && std::io::stderr().is_terminal()
+}
+
+/// Linear-interpolate the brand gradient from pink (224,80,122) at t=0 to
+/// teal (86,216,201) at t=1.
+fn brand_gradient(t: f32) -> (u8, u8, u8) {
+    let t = t.clamp(0.0, 1.0);
+    let lerp = |a: f32, b: f32| (a + (b - a) * t).round() as u8;
+    (lerp(224.0, 86.0), lerp(80.0, 216.0), lerp(122.0, 201.0))
+}
+
+/// Print the hand-designed "DEEPSYNTH" wordmark on stderr, colored with a
+/// left-to-right pink→teal truecolor gradient, followed by the tagline.
+fn print_banner() {
+    // ANSI Shadow style block letters: D E E P S Y N T H.
+    const ROWS: [&str; 6] = [
+        "██████╗ ███████╗███████╗██████╗ ███████╗██╗   ██╗███╗   ██╗████████╗██╗  ██╗",
+        "██╔══██╗██╔════╝██╔════╝██╔══██╗██╔════╝╚██╗ ██╔╝████╗  ██║╚══██╔══╝██║  ██║",
+        "██║  ██║█████╗  █████╗  ██████╔╝███████╗ ╚████╔╝ ██╔██╗ ██║   ██║   ███████║",
+        "██║  ██║██╔══╝  ██╔══╝  ██╔═══╝ ╚════██║  ╚██╔╝  ██║╚██╗██║   ██║   ██╔══██║",
+        "██████╔╝███████╗███████╗██║     ███████║   ██║   ██║ ╚████║   ██║   ██║  ██║",
+        "╚═════╝ ╚══════╝╚══════╝╚═╝     ╚══════╝   ╚═╝   ╚═╝  ╚═══╝   ╚═╝   ╚═╝  ╚═╝",
+    ];
+    let width = ROWS.iter().map(|r| r.chars().count()).max().unwrap_or(1).max(2);
+    let mut out = String::new();
+    for row in ROWS {
+        for (i, ch) in row.chars().enumerate() {
+            let (r, g, b) = brand_gradient(i as f32 / (width - 1) as f32);
+            out.push_str(&format!("\x1b[38;2;{r};{g};{b}m{ch}"));
+        }
+        out.push_str("\x1b[0m\n");
+    }
+    let (r, g, b) = brand_gradient(0.5);
+    out.push_str(&format!(
+        "\x1b[38;2;{r};{g};{b}m  text \u{2192} preset  \u{00b7}  Surge XT / Dexed / Vital\x1b[0m\n\n"
+    ));
+    eprint!("{out}");
+}
+
+/// Print a slim box-drawing result panel on stderr summarizing the write.
+fn print_result_panel(file: &str, bytes: usize, params: usize, provider_model: Option<String>) {
+    let mut rows = vec![
+        format!("file      {file}"),
+        format!("size      {bytes} bytes"),
+        format!("params    {params}"),
+    ];
+    if let Some(pm) = provider_model {
+        rows.push(format!("provider  {pm}"));
+    }
+    let title = "─ deepsynth ";
+    let content_w = rows
+        .iter()
+        .map(|r| r.chars().count())
+        .max()
+        .unwrap_or(0)
+        .max(title.chars().count());
+    let (r, g, b) = brand_gradient(1.0); // teal borders
+    let c = |s: String| format!("\x1b[38;2;{r};{g};{b}m{s}\x1b[0m");
+
+    let mut out = String::new();
+    let top_fill = "─".repeat(content_w + 2 - title.chars().count());
+    out.push_str(&c(format!("┌{title}{top_fill}┐")));
+    out.push('\n');
+    for row in &rows {
+        let pad = " ".repeat(content_w - row.chars().count());
+        out.push_str(&format!("{} {row}{pad} {}\n", c("│".into()), c("│".into())));
+    }
+    out.push_str(&c(format!("└{}┘", "─".repeat(content_w + 2))));
+    out.push('\n');
+    eprint!("{out}");
 }
 
 /// Sanitize a preset name into a safe filename stem.

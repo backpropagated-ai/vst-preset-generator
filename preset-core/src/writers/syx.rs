@@ -228,22 +228,6 @@ pub fn create_voice(params: &Params, preset_name: &str) -> [u8; 155] {
             voice[op_offset + 17] = b;
         }
 
-        // Fixed-frequency mode: when `opN_freq_fixed` (Hz) is present AND the
-        // mode is fixed, derive coarse/fine from the requested frequency. The
-        // DX7 realizes fixed frequencies as 10^(coarse mod 4) * 10^(fine/100)
-        // Hz (1 Hz .. ~9772 Hz), so coarse is the decade and fine the mantissa.
-        // Only overrides when the key is present, preserving Python parity for
-        // inputs without it (the legacy generator ignored freq_fixed).
-        if mode == 1 {
-            if let Some(ParamValue::Num(hz)) = params.get(&format!("{pre}freq_fixed")) {
-                let hz = hz.clamp(1.0, 9772.0);
-                let decade = hz.log10().floor().clamp(0.0, 3.0);
-                let fine = ((hz.log10() - decade) * 100.0).round().clamp(0.0, 99.0);
-                voice[op_offset + 16] = (1u8 << 5) | (decade as u8);
-                voice[op_offset + 17] = fine as u8;
-            }
-        }
-
         // Detune -> offset+18
         let detune = num_or(params, &format!("{pre}detune"), 0.0);
         voice[op_offset + 18] = detune_to_dx7(detune);

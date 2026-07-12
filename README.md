@@ -9,7 +9,13 @@ Written in Rust. There is no official Anthropic or Google SDK for Rust, so this
 talks to the Claude Messages API and the Gemini Generative Language API over raw
 HTTPS (rustls-tls).
 
-Author: [LeGott](https://legott.ai) ([hi@legott.ai](mailto:hi@legott.ai))
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0--only-blue.svg" alt="License: GPL-3.0-only"></a>
+  <img src="https://img.shields.io/badge/Rust-1.96%2B-orange.svg" alt="Rust 1.96+">
+  <a href="https://backpropagated-ai.github.io/vst-preset-generator/"><img src="https://img.shields.io/badge/GitHub%20Pages-live%20demo-e0507a.svg" alt="GitHub Pages — live demo"></a>
+</p>
+
+**[▶ Try it in your browser](https://backpropagated-ai.github.io/vst-preset-generator/app/)** — a WebAssembly build of the same generator runs entirely client-side (bring your own key). Or read the [project page](https://backpropagated-ai.github.io/vst-preset-generator/).
 
 > **License: GPL-3.0-only.** This is a deliberate choice — it lets the project
 > legally reference and port the GPL-3.0 Surge XT patch-format code so that the
@@ -114,15 +120,10 @@ provider has its **own** key, resolved in this priority order:
 
 1. an explicit key (`--api-key` on the CLI, or the app's Settings panel),
 2. the provider's environment variable,
-3. the OS keychain (service `deepsynth-preset`, user `anthropic-api-key` /
-   `gemini`) — the app can store it there.
+3. the OS keychain (service `deepsynth-preset`, user `anthropic` / `gemini`) —
+   the app can store it there.
 
 The key is sent only in the request headers and is never logged.
-
-> **Security note:** prefer the environment variable or the keychain over
-> `--api-key` — a key passed as a command-line argument lands in your shell
-> history and is visible to other local processes (`ps`) for the duration of
-> the run.
 
 ```bash
 # Claude (Anthropic)
@@ -132,10 +133,10 @@ export ANTHROPIC_API_KEY="sk-ant-…"
 export GEMINI_API_KEY="AIza…"
 ```
 
-| Provider | Default model      | Env var(s)                              | Keychain user       |
-|----------|--------------------|-----------------------------------------|---------------------|
-| `claude` | `claude-opus-4-8`  | `ANTHROPIC_API_KEY`                     | `anthropic-api-key` |
-| `gemini` | `gemini-3.5-flash` | `GEMINI_API_KEY` (or `GOOGLE_API_KEY`)  | `gemini`            |
+| Provider | Default model | Env var(s) | Keychain user |
+|----------|---------------|-----------|---------------|
+| `claude` | `claude-opus-4-8` | `ANTHROPIC_API_KEY` | `anthropic` |
+| `gemini` | `gemini-3.5-flash` | `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) | `gemini` |
 
 Override the model per run with `--model`.
 
@@ -161,6 +162,28 @@ cargo run -p deepsynth-preset-app    # launch the desktop app
 ```
 
 ## CLI usage
+
+An interactive run prints a banner and a result panel on **stderr** (a pink→teal
+gradient in a truecolor terminal), while stdout stays clean for scripts. The
+decoration is suppressed when stderr is piped, when `NO_COLOR` is set, or with
+`--quiet`:
+
+```text
+██████╗ ███████╗███████╗██████╗ ███████╗██╗   ██╗███╗   ██╗████████╗██╗  ██╗
+██╔══██╗██╔════╝██╔════╝██╔══██╗██╔════╝╚██╗ ██╔╝████╗  ██║╚══██╔══╝██║  ██║
+██║  ██║█████╗  █████╗  ██████╔╝███████╗ ╚████╔╝ ██╔██╗ ██║   ██║   ███████║
+██║  ██║██╔══╝  ██╔══╝  ██╔═══╝ ╚════██║  ╚██╔╝  ██║╚██╗██║   ██║   ██╔══██║
+██████╔╝███████╗███████╗██║     ███████║   ██║   ██║ ╚████║   ██║   ██║  ██║
+╚═════╝ ╚══════╝╚══════╝╚═╝     ╚══════╝   ╚═╝   ╚═╝  ╚═══╝   ╚═╝   ╚═╝  ╚═╝
+  text → preset  ·  Surge XT / Dexed / Vital
+
+┌─ deepsynth ────────────────────────┐
+│ file      warm_pad.fxp             │
+│ size      29247 bytes              │
+│ params    66                       │
+│ provider  gemini · gemini-3.5-flash│
+└────────────────────────────────────┘
+```
 
 ```bash
 # Generate from a prompt via Claude (default provider; needs an API key):
@@ -202,36 +225,32 @@ thread — the UI stays responsive), review the mapped parameters in a table, th
 API key in the OS keychain (one key row per provider).
 
 <p align="center">
-  <img src="docs/assets/app_generated.png" alt="DeepSynth Preset Desktop App Preview" width="700">
+  <img src="docs/assets/app_generated.png" alt="DeepSynth Preset desktop app right after generating a Surge XT patch with Gemini" width="700">
   <br>
-  <em>DeepSynth Preset Desktop App - Parameter Generation Preview</em>
-</p>
-
-<p align="center">
-  <img src="docs/assets/app_settings.png" alt="DeepSynth Preset Settings Panel" width="700">
-  <br>
-  <em>DeepSynth Preset Desktop App - Settings Panel</em>
+  <em>Live generation with Gemini — mapped parameters in a teal/pink table, ready to Save.</em>
 </p>
 
 ---
 
-## The Surge XT format
+## The Surge XT format (correctness note)
 
-The legacy Python writer embedded a small JSON blob in the FXP chunk, but real
-Surge XT does not load that. The current writer uses the actual Surge patch
-layout instead:
+The legacy code this project ports from embedded a small JSON blob in the FXP
+chunk — **real Surge XT does not load that.** Investigating the Surge XT
+GPL-3.0 source (`src/common/SurgeSynthesizerIO.cpp`, `SurgePatch.cpp`,
+`PatchFileHeaderStructs.h`) showed the actual format:
 
-- `chunkMagic='CcnK'`, `fxMagic='FPCh'` (chunk format), `fxID='cjs3'`,
-  `numPrograms=1`.
-- Inside the chunk: `patch_header` with `tag="sub3"`, little-endian `xmlsize`,
-  and `wtsize[2][3]`.
-- Then a UTF-8 `<patch revision="22">` XML document whose `<parameters>` block
-  stores one element per Surge storage name, with `type` (0=int, 2=float) and
-  the raw internal value.
+- an FXP container with `chunkMagic='CcnK'`, `fxMagic='FPCh'` (chunk format),
+  `fxID='cjs3'`, `numPrograms=1`;
+- inside the chunk, a `patch_header` = `tag="sub3"` + little-endian `xmlsize` +
+  `wtsize[2][3]` (all zero when there are no wavetables);
+- then a UTF-8 `<patch revision="22">` XML document (matching the Surge XT 1.3.4 factory Init Saw template, so current releases load it without a version warning) whose `<parameters>` holds
+  one named element per parameter (its Surge *storage name*, e.g.
+  `a_filter1_cutoff`) with `type` (0=int, 2=float) and a raw **internal** value
+  (cutoff = semitone offset from 440 Hz, envelope times = log2 seconds, etc.).
 
-This matches Surge XT's own `TestInitSaw.fxp`, so the generated `.fxp` files
-load cleanly in current releases. See `preset-core/src/writers/surge.rs` for
-the derivation and value encodings.
+This writer reproduces that container exactly (verified against Surge's own
+`TestInitSaw.fxp`). See `preset-core/src/writers/surge.rs` for the full
+derivation and the value encodings.
 
 **Surge XT load-tested.** The generated `.fxp` (both a `--defaults` patch and a
 rich `--params-json` patch exercising pitch decomposition, `extend_range`, the
@@ -264,6 +283,3 @@ hosts is the final confirmation for them.
   are asserted byte-identical to the legacy Python generators (run via a
   `python3` subprocess). These skip gracefully if `python3` or the reference
   files are unavailable.
-
-If you want to follow more AI-based synth experiments, subscribe to
-[backpropagated.ai](https://backpropagated.ai).

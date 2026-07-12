@@ -277,47 +277,128 @@ fn parse_response(
     Ok(out)
 }
 
-/// Concise, synth-specific sound-design system prompt.
+/// Synth-specific sound-design system prompt.
+///
+/// Structured as: common value conventions (normalized values + per-property
+/// anchor tables), synth architecture, audibility rules (the checklist that
+/// keeps a generated patch from being silent or degenerate), and archetype
+/// recipes the model can adapt to the requested sound.
 pub fn system_prompt(synth: &str) -> String {
-    let arch = match synth {
+    let specific = match synth {
         "surge" => {
-            "Surge XT is a hybrid subtractive/wavetable synth: three oscillators \
-             (classic/wavetable/FM/etc.), a mixer, two multimode filters, an amp \
-             ADSR and a filter ADSR, and LFOs. Filters shape brightness; the amp \
-             envelope shapes the note contour; the filter envelope opens/closes the \
-             filter over time."
+            "ARCHITECTURE (Surge XT, scene A): three oscillators (classic saw/pulse, modern, \
+             wavetable, window, sine, fm2, fm3) feed a mixer (per-osc levels, noise, ring-mod \
+             1x2 / 2x3), then two multimode filters, a VCA. env1 = AMP ADSR (note contour), \
+             env2 = FILTER ADSR (drives filter1 cutoff by filter_env_depth). Three voice LFOs \
+             plus explicit mod-depth params (mod_lfo1_pitch = vibrato, mod_lfo1_cutoff = wah/\
+             wobble, mod_env_pitch, mod_velocity_*).\n\n\
+             AUDIBILITY RULES (a patch violating these is broken):\n\
+             - At least one oscillator level >= 0.5. Unused oscillators: level 0.\n\
+             - filter1_cutoff below 0.3 (~160 Hz) with an lp type strangles the sound; only \
+             go that low for a filter-envelope sweep (then set filter_env_depth 0.5..1.0 so \
+             env2 opens the filter) or a deep bass with high resonance.\n\
+             - amp_sustain > 0.5 for any held sound (pad/lead/organ/strings); low sustain \
+             only for plucks/percussion, and then amp_decay sets the note length.\n\
+             - master_volume and output_gain 0.7..1.0. Do not stack low values.\n\
+             - filter_env_depth is bipolar around 0.5: 0.5 = none, > 0.5 opens, < 0.5 closes.\n\n\
+             RECIPES (adapt, don't copy):\n\
+             - Warm pad: classic x2, osc2_pitch +0.5625 (=+6 st) or unison_voices 3..5 with \
+             unison_detune 0.15..0.3; cutoff 0.45..0.6, lp24; amp attack 0.65..0.8 (0.5..2 s), \
+             release 0.7+; slow lfo1 (rate 0.3..0.45) -> mod_lfo1_cutoff 0.55..0.6 for movement; \
+             drift 0.2..0.4; character warm.\n\
+             - Pluck/bass: fast attack (0..0.2), decay 0.45..0.6, sustain 0..0.3; cutoff \
+             0.35..0.5 + filter_env_depth 0.7..0.9 (env2 snaps the filter); osc pitch -12 st \
+             (=0.375) for bass; lp_ladder or lp24.\n\
+             - Bright lead: cutoff 0.7..0.9, resonance 0.2..0.4; mod_lfo1_pitch ~0.53 (subtle \
+             vibrato) with lfo1 rate ~0.75 (5 Hz); unison 2..3 voices; character bright.\n\
+             - Bell/metallic: sine or fm2 osc + ring_12 0.4..0.7; long decay, sustain 0; \
+             high cutoff.\n\
+             - Strings/brass: saw (classic width ~0.5..1), cutoff 0.55..0.7, filter_env_depth \
+             ~0.6, medium attack (0.4..0.6), high sustain; brass wants faster attack + \
+             character bright."
         }
         "dexed" => {
-            "Dexed emulates the Yamaha DX7: 6 FM operators arranged by one of 32 \
-             algorithms, each operator with a coarse/fine frequency ratio and a \
-             4-stage rate/level envelope, plus operator feedback and an LFO. \
-             Brightness and timbre come from operator frequency ratios and how much \
-             modulator level is fed into carriers; the envelope rates/levels shape \
-             the note."
+            "ARCHITECTURE (Dexed = Yamaha DX7, 6-operator FM): the ALGORITHM (1..32) decides \
+             which operators are CARRIERS (audible output) and which are MODULATORS (shape \
+             the timbre of the operator below them). Carrier level = loudness; modulator \
+             level = brightness/harmonic content — this is THE main timbre control. Each \
+             operator has a 4-stage envelope (rates r1..r4, levels l1..l4; l3 = sustain, \
+             r4/l4 = release). Feedback on one operator adds saw-like buzz.\n\n\
+             CARRIER MAP (by algorithm, op numbers): 1..2 -> {1,3}; 3..4 -> {1,4}; \
+             5..6 -> {1,3,5}; 7..9 -> {1,3}; 10..11 -> {1,4}; 12..15 -> {1,3}; 16..18 -> {1}; \
+             19 -> {1,4,5}; 20 -> {1,2,4}; 21 -> {1,2,4,5}; 22 -> {1,3,4,5}; 23 -> {1,2,4,5}; \
+             24..25 -> {1,2,3,4,5}; 26..27 -> {1,2,4}; 28 -> {1,3,6}; 29 -> {1,2,3,5}; \
+             30 -> {1,2,3,6}; 31 -> {1,2,3,4,5}; 32 -> all six.\n\n\
+             AUDIBILITY RULES:\n\
+             - EVERY carrier of the chosen algorithm: level >= 90 (normalized ~0.9+), eg_l1 \
+             ~99, and eg_r4 >= 25 with eg_l4 = 0. A carrier at low level = silence.\n\
+             - Unused modulators: level 0. Active modulators: 40..85 (higher = brighter).\n\
+             - Keep ALL pitch_eg levels at 50 (≈0.505 normalized) unless a pitch sweep is \
+             explicitly wanted — other values detune the whole patch.\n\
+             - transpose 0 (=0.5 normalized) unless an octave shift is wanted.\n\n\
+             RECIPES:\n\
+             - E-piano (DX7 classic): algorithm 5, three carrier/modulator pairs; carriers \
+             ratio 1 (coarse 1), modulators coarse 1 and one pair coarse 14 for the tine; \
+             modulator levels 55..75; carrier vel_sens 2..3, modulator vel_sens 5..7; fast \
+             attack, l3 ~0 with slow r3 for the singing decay.\n\
+             - Bell/tine: modulator coarse 3..7 vs carrier 1 (inharmonic: add fine ~41); \
+             long decay (r2/r3 low), sustain l3 = 0.\n\
+             - FM bass: algorithm 1 or 16; modulator level 70..85 for growl, carrier ratio \
+             0.5 (coarse 0); fast envelope, medium l3.\n\
+             - Brass: algorithm 18 or 22, feedback 5..7, modulator levels ~70, attack r1 \
+             ~55..70 (slight blip), high l3.\n\
+             - Organ: algorithm 32, several carriers at ratios 0.5/1/2/3, levels 85..99, \
+             instant envelopes, l3 = 99.\n\
+             - Pad: slow r1 (30..50) on carriers AND modulators, high l3, slow r4 (20..35); \
+             lfo_pmd 10..20 with lfo_speed ~35 for chorus-like movement."
         }
         "vital" => {
-            "Vital is a spectral wavetable synth: three wavetable oscillators, a \
-             sample source, two multimode filters, two ADSR envelopes, two LFOs, and \
-             reverb/delay/chorus/distortion effects. Wavetable position, filter \
-             cutoff/resonance and the envelopes shape the sound."
+            "ARCHITECTURE (Vital, spectral wavetable): three wavetable oscillators (osc_N_wave \
+             = scan position, higher = brighter/more complex) + sample source -> filter 1 / \
+             filter 2 (osc1 routes to filter 1, osc2 to filter 2 by default) -> effects \
+             (reverb, delay, chorus, distortion). env_1 is HARDWIRED to amplitude; env_2 is \
+             free — wire it (or an LFO/velocity) to a target via mod_1_source/destination/\
+             amount. Filter cutoff is in MIDI-note terms (see anchors), resonance 0..1.\n\n\
+             AUDIBILITY RULES:\n\
+             - osc_1_level >= 0.6 for the main voice; unused oscillators level 0. (Any \
+             non-zero level auto-enables its oscillator; mixes auto-enable filters/effects.)\n\
+             - env_1_sustain > 0.5 for held sounds; plucks: sustain 0, decay sets length.\n\
+             - filter_1_mix 1.0 when filtering; filter_1_cutoff below ~0.35 (~note 53/175 Hz) \
+             muffles everything unless env_2 or an LFO opens it via the mod matrix.\n\
+             - master_volume 0.7..0.9.\n\
+             - For filter movement you MUST use the mod matrix: e.g. mod_1_source env_2, \
+             mod_1_destination filter_1_cutoff, mod_1_amount 0.3..0.8.\n\n\
+             RECIPES:\n\
+             - Supersaw/trance: osc_1_wave ~0.2..0.4, unison_voices 9..16, unison_detune \
+             0.3..0.5, cutoff 0.6..0.8, chorus_mix 0.3, reverb_mix 0.25.\n\
+             - Wobble/dubstep bass: osc tune -24 st (0.25), lfo_1 -> filter_1_cutoff via mod \
+             matrix amount 0.6..0.9, lfo_1_frequency 0.3..0.6 (1..5 Hz), ladder/dirty filter, \
+             distortion_mix 0.2..0.4.\n\
+             - Lush pad: two oscs detuned (osc_2_tune ±0.07 st offsets near 0.5), slow attack \
+             0.6..0.75 (0.5..2 s), long release, chorus_mix 0.4, reverb_mix 0.35, \
+             reverb_decay_time 0.6..0.8; slow lfo -> cutoff, small amount.\n\
+             - Pluck: attack 0, decay ~0.5 (0.1..0.3 s), sustain 0; env_2 -> cutoff amount \
+             0.5..0.7 with env_2 decay matching; delay_mix 0.2 for space.\n\
+             - Keys/EP: formant or analog filter, moderate cutoff, velocity -> osc_1_level \
+             via mod matrix (amount 0.4..0.6), chorus_mix 0.3."
         }
         _ => "A subtractive/FM software synthesizer.",
     };
     format!(
         "You are an expert sound designer creating a preset for the {synth} synthesizer.\n\n\
-         {arch}\n\n\
-         You will be given a text description of a desired sound. Respond with a JSON \
-         object assigning every parameter in the provided schema.\n\n\
-         Rules:\n\
-         - Numeric parameters are NORMALIZED to 0.0..1.0 unless a property says otherwise; \
-         0.0 is the minimum of the parameter's real range and 1.0 is the maximum. Choose \
-         values that realize the requested sound.\n\
-         - Enum (string) parameters must be exactly one of the listed options.\n\
-         - Boolean parameters are true/false.\n\
-         - Think about the whole signal path: pick oscillator/operator settings, filter \
-         cutoff/resonance, and envelope times that together produce the described character \
-         (e.g. a 'warm pad' wants a slow attack, low-ish cutoff, gentle resonance; a \
-         'plucky bass' wants a fast attack, short decay, low sustain).\n\
-         - Return ONLY the JSON object required by the schema."
+         You will be given a text description of a desired sound. Respond with a JSON object \
+         assigning every parameter in the provided schema.\n\n\
+         VALUE CONVENTIONS:\n\
+         - Every numeric parameter is NORMALIZED 0.0..1.0. Each property description carries \
+         an anchor table '0→a, 0.25→b, 0.5→c, 0.75→d, 1→e' showing the REAL value (Hz, \
+         seconds, semitones, integer steps) at those normalized points — interpolate between \
+         anchors to hit a real target. NEVER output real-unit values (e.g. for a 500 Hz \
+         cutoff output the normalized fraction, not 500).\n\
+         - Integer-valued parameters (algorithm, voices, ratios) are ALSO normalized — use \
+         the formula/example in their description.\n\
+         - Enum parameters: exactly one of the listed options. Booleans: true/false.\n\n\
+         {specific}\n\n\
+         Design the WHOLE signal path coherently for the requested character, respect every \
+         audibility rule, and return ONLY the JSON object required by the schema."
     )
 }

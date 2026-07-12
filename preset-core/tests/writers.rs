@@ -332,8 +332,12 @@ fn surge_full_coverage_roundtrip() {
 fn vital_preset_is_valid_json_with_settings() {
     let mut mapped: BTreeMap<String, ParamValue> = BTreeMap::new();
     mapped.insert("filter_1_cutoff".into(), num(80.0));
+    mapped.insert("filter_1_mix".into(), num(1.0));
     mapped.insert("master_volume".into(), num(0.7));
     mapped.insert("filter_1_type".into(), ParamValue::Enum("ladder".into()));
+    mapped.insert("osc_1_level".into(), num(0.81));
+    mapped.insert("env_1_release".into(), num(0.0899)); // Vital's init release
+    mapped.insert("lfo_1_frequency".into(), num(2.0));
     let meta = vital::VitalMeta {
         name: "V Pad".into(),
         ..Default::default()
@@ -344,10 +348,25 @@ fn vital_preset_is_valid_json_with_settings() {
     assert_eq!(v["name"], "V Pad");
     assert_eq!(v["synth_version"], "1.0.7");
     let settings = v["settings"].as_object().unwrap();
+    // Cutoff is stored directly as a MIDI note (synth_parameters.cpp:421).
     assert!((settings["filter_1_cutoff"].as_f64().unwrap() - 80.0).abs() < 1e-6);
     // ladder -> Vital filter model index 2.
     assert_eq!(settings["filter_1_model"].as_i64().unwrap(), 2);
-    assert!((settings["volume"].as_f64().unwrap() - 0.7).abs() < 1e-6);
+    // A non-zero mix must switch the filter on (it defaults to off in Vital).
+    assert_eq!(settings["filter_1_on"].as_i64().unwrap(), 1);
+    // volume is stored as (dB+80)^2 with dB = 20*log10(v):
+    // 0.7 -> -3.098 dB -> (76.902)^2 ≈ 5913.9 (synth_parameters.cpp:201).
+    assert!((settings["volume"].as_f64().unwrap() - 5913.9).abs() < 0.5);
+    // Oscillator level is quadratic: stored = sqrt(0.81) = 0.9, and the osc
+    // must be switched on.
+    assert!((settings["osc_1_level"].as_f64().unwrap() - 0.9).abs() < 1e-9);
+    assert_eq!(settings["osc_1_on"].as_i64().unwrap(), 1);
+    // Envelope times are quartic: stored = s^(1/4); Vital's init release
+    // 0.0899 s stores as ~0.5476 (synth_parameters.cpp:360 default).
+    assert!((settings["env_1_release"].as_f64().unwrap() - 0.5476).abs() < 1e-3);
+    // LFO frequency is log2(Hz) and must force seconds-mode sync.
+    assert!((settings["lfo_1_frequency"].as_f64().unwrap() - 1.0).abs() < 1e-9);
+    assert_eq!(settings["lfo_1_sync"].as_i64().unwrap(), 0);
 }
 
 // -------------------------------------------------------------------------

@@ -26,6 +26,8 @@
 pub mod claude;
 #[cfg(feature = "llm")]
 pub mod gemini;
+#[cfg(feature = "llm")]
+pub mod openai;
 pub mod mappers;
 pub mod param;
 #[cfg(feature = "llm")]
@@ -112,6 +114,9 @@ pub enum Error {
     #[cfg(feature = "llm")]
     #[error(transparent)]
     Gemini(#[from] gemini::GeminiError),
+    #[cfg(feature = "llm")]
+    #[error(transparent)]
+    OpenAi(#[from] openai::OpenAiError),
     #[error("could not serialize preset: {0}")]
     Serialize(String),
 }
@@ -209,6 +214,16 @@ pub fn generate_preset_with(
         }
         Provider::Gemini => {
             let mut client = gemini::GeminiClient::new(api_key)?;
+            if let Some(m) = model {
+                client = client.with_model(m);
+            }
+            client.generate(mapper.as_ref(), prompt)?
+        }
+        Provider::OpenAi(flavor) => {
+            // Local backends accept an empty/absent key; hosted ones need one.
+            let key = Some(api_key).filter(|k| !k.trim().is_empty());
+            let mut client = openai::OpenAiClient::new(flavor, key)?
+                .with_base_url(flavor.resolve_base_url());
             if let Some(m) = model {
                 client = client.with_model(m);
             }

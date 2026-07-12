@@ -11,10 +11,12 @@
 // settings panel stores each provider's API key in the OS keychain via
 // `keyring`.
 
+mod theme;
+
 use std::collections::BTreeMap;
 use std::sync::mpsc::{Receiver, Sender};
 
-use eframe::egui;
+use eframe::egui::{self, Color32, CornerRadius, RichText, Stroke};
 
 use preset_core::claude::key::KeySource;
 use preset_core::param::ParamValue;
@@ -23,15 +25,18 @@ use preset_core::{PresetMeta, Provider, Synth};
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([880.0, 640.0])
-            .with_min_inner_size([620.0, 460.0])
+            .with_inner_size([920.0, 700.0])
+            .with_min_inner_size([640.0, 480.0])
             .with_title("DeepSynth Preset"),
         ..Default::default()
     };
     eframe::run_native(
         "DeepSynth Preset",
         options,
-        Box::new(|_cc| Ok(Box::new(App::new()))),
+        Box::new(|cc| {
+            theme::apply(&cc.egui_ctx);
+            Ok(Box::new(App::new()))
+        }),
     )
 }
 
@@ -50,6 +55,8 @@ struct App {
     name: String,
     synth: Synth,
     provider: Provider,
+    /// Optional model-id override; empty = use the provider's default model.
+    model: String,
 
     // Generation state.
     generating: bool,
@@ -57,11 +64,15 @@ struct App {
     status: String,
     last_bytes: Option<Vec<u8>>,
     last_mapped: BTreeMap<String, ParamValue>,
+    // Provider used for the last successful generation (for the meta line).
+    last_provider: Provider,
 
     // API key settings — one editable field per provider.
     show_settings: bool,
     claude_key_input: String,
     gemini_key_input: String,
+    openai_key_input: String,
+    openrouter_key_input: String,
     key_status: String,
 
     // Self-capture hook for docs/demo screenshots (no OS screen-recording
@@ -83,14 +94,18 @@ impl App {
             name: "DeepSynth Patch".to_string(),
             synth: Synth::Surge,
             provider,
+            model: String::new(),
             generating: false,
             rx: None,
             status: "Enter a prompt and click Generate.".to_string(),
             last_bytes: None,
             last_mapped: BTreeMap::new(),
+            last_provider: provider,
             show_settings: false,
             claude_key_input: String::new(),
             gemini_key_input: String::new(),
+            openai_key_input: String::new(),
+            openrouter_key_input: String::new(),
             key_status,
             capture_path: std::env::var_os("DEEPSYNTH_APP_CAPTURE").map(Into::into),
             capture_demo: false,
@@ -171,8 +186,10 @@ impl App {
             return;
         }
         let provider = self.provider;
-        let (key, _src) = match provider.resolve_key(None) {
-            Some(k) => k,
+        // Local backends (Ollama, LM Studio) need no key; hosted ones do.
+        let key = match provider.resolve_key(None) {
+            Some((k, _src)) => k,
+            None if !provider.requires_key() => String::new(),
             None => {
                 self.status = format!(
                     "No {} API key. Open Settings to add one (or set {}).",
@@ -186,19 +203,22 @@ impl App {
 
         let (tx, rx): (Sender<GenResult>, Receiver<GenResult>) = std::sync::mpsc::channel();
         self.rx = Some(rx);
+        self.last_provider = provider;
         self.generating = true;
         self.status = "Generating… (this can take up to a couple of minutes)".to_string();
 
         let synth = self.synth;
         let name = self.name.clone();
+        let model = self.model.trim().to_string();
         let ctx = ctx.clone();
         std::thread::spawn(move || {
             let meta = PresetMeta {
                 name,
                 ..Default::default()
             };
+            let model_opt = if model.is_empty() { None } else { Some(model.as_str()) };
             let result = match preset_core::generate_preset_with(
-                provider, synth, &key, None, &prompt, &meta,
+                provider, synth, &key, model_opt, &prompt, &meta,
             ) {
                 Ok(gen) => GenResult::Ok {
                     bytes: gen.bytes,
@@ -262,16 +282,32 @@ impl eframe::App for App {
         self.drive_capture(ctx);
 
         // --- top bar --------------------------------------------------------
-        egui::TopBottomPanel::top("top").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.heading("DeepSynth Preset");
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button("⚙ Settings").clicked() {
-                        self.show_settings = true;
-                    }
+        let header_frame = egui::Frame::new()
+            .fill(theme::BG)
+            .inner_margin(egui::Margin {
+                left: 16,
+                right: 16,
+                top: 12,
+                bottom: 12,
+            })
+            .stroke(Stroke::new(1.0, theme::LINE));
+        egui::TopBottomPanel::top("top")
+            .frame(header_frame)
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    theme::wordmark(ui, 22.0);
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        // Ghost Settings button: transparent fill, accent hover border.
+                        let btn = egui::Button::new(
+                            RichText::new("⚙  Settings").color(theme::MUTED),
+                        )
+                        .fill(Color32::TRANSPARENT);
+                        if ui.add(btn).clicked() {
+                            self.show_settings = true;
+                        }
+                    });
                 });
             });
-        });
 
         // --- settings window (API key) -------------------------------------
         if self.show_settings {
@@ -279,95 +315,201 @@ impl eframe::App for App {
         }
 
         // --- main panel -----------------------------------------------------
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ui.add_space(4.0);
-            ui.horizontal(|ui| {
-                ui.label("Synth:");
-                egui::ComboBox::from_id_salt("synth")
-                    .selected_text(self.synth.id())
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut self.synth, Synth::Surge, "Surge XT (.fxp)");
-                        ui.selectable_value(&mut self.synth, Synth::Dexed, "Dexed / DX7 (.syx)");
-                        ui.selectable_value(&mut self.synth, Synth::Vital, "Vital (.vital)");
+        let central_frame = egui::Frame::new()
+            .fill(theme::BG)
+            .inner_margin(egui::Margin::same(18));
+        egui::CentralPanel::default()
+            .frame(central_frame)
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.vertical(|ui| {
+                        theme::field_label(ui, "Synth");
+                        egui::ComboBox::from_id_salt("synth")
+                            .selected_text(self.synth.id())
+                            .show_ui(ui, |ui| {
+                                ui.selectable_value(
+                                    &mut self.synth,
+                                    Synth::Surge,
+                                    "Surge XT (.fxp)",
+                                );
+                                ui.selectable_value(
+                                    &mut self.synth,
+                                    Synth::Dexed,
+                                    "Dexed / DX7 (.syx)",
+                                );
+                                ui.selectable_value(
+                                    &mut self.synth,
+                                    Synth::Vital,
+                                    "Vital (.vital)",
+                                );
+                            });
                     });
-                ui.add_space(12.0);
-                ui.label("Provider:");
-                let prev_provider = self.provider;
-                egui::ComboBox::from_id_salt("provider")
-                    .selected_text(self.provider.label())
-                    .show_ui(ui, |ui| {
-                        for p in Provider::ALL {
-                            ui.selectable_value(&mut self.provider, *p, p.label());
+                    ui.add_space(16.0);
+                    ui.vertical(|ui| {
+                        theme::field_label(ui, "Provider");
+                        let prev_provider = self.provider;
+                        egui::ComboBox::from_id_salt("provider")
+                            .selected_text(self.provider.label())
+                            .show_ui(ui, |ui| {
+                                for p in Provider::ALL {
+                                    ui.selectable_value(&mut self.provider, *p, p.label());
+                                }
+                            });
+                        if self.provider != prev_provider {
+                            // Reflect the newly-selected provider's key status.
+                            self.key_status = key_status_for(self.provider);
                         }
                     });
-                if self.provider != prev_provider {
-                    // Reflect the newly-selected provider's key status.
-                    self.key_status = key_status_for(self.provider);
-                }
-                ui.add_space(12.0);
-                ui.label("Name:");
-                ui.text_edit_singleline(&mut self.name);
-            });
-
-            ui.add_space(6.0);
-            ui.label("Prompt:");
-            ui.add(
-                egui::TextEdit::multiline(&mut self.prompt)
-                    .hint_text("e.g. warm analog pad with slow attack and gentle movement")
-                    .desired_rows(3)
-                    .desired_width(f32::INFINITY),
-            );
-
-            ui.add_space(6.0);
-            ui.horizontal(|ui| {
-                let gen_enabled = !self.generating;
-                if ui
-                    .add_enabled(gen_enabled, egui::Button::new("Generate"))
-                    .clicked()
-                {
-                    self.start_generate(ctx);
-                }
-                let save_enabled = self.last_bytes.is_some() && !self.generating;
-                if ui
-                    .add_enabled(save_enabled, egui::Button::new("Save…"))
-                    .clicked()
-                {
-                    self.save_dialog();
-                }
-                if self.generating {
-                    ui.spinner();
-                }
-            });
-
-            ui.add_space(6.0);
-            ui.separator();
-            ui.label(egui::RichText::new(&self.status).italics());
-            ui.separator();
-
-            // --- parameter table ------------------------------------------
-            if !self.last_mapped.is_empty() {
-                ui.add_space(4.0);
-                ui.label(egui::RichText::new("Mapped parameters").strong());
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    egui::Grid::new("params")
-                        .striped(true)
-                        .num_columns(2)
-                        .show(ui, |ui| {
-                            for (k, v) in &self.last_mapped {
-                                ui.monospace(k);
-                                ui.monospace(format_value(v));
-                                ui.end_row();
-                            }
-                        });
+                    ui.add_space(16.0);
+                    ui.vertical(|ui| {
+                        theme::field_label(ui, "Preset name");
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.name).desired_width(220.0),
+                        );
+                    });
                 });
-            } else {
-                ui.add_space(8.0);
-                ui.weak(
-                    "No preset generated yet. Enter a prompt above and click Generate. \
-                     You'll need an API key for the selected provider (Settings).",
+
+                ui.add_space(12.0);
+                theme::field_label(ui, "Describe the sound");
+                ui.add_space(2.0);
+                ui.add(
+                    egui::TextEdit::multiline(&mut self.prompt)
+                        .hint_text("e.g. warm analog pad with slow attack and gentle movement")
+                        .desired_rows(3)
+                        .desired_width(f32::INFINITY),
                 );
-            }
-        });
+
+                ui.add_space(12.0);
+                theme::field_label(ui, "Model");
+                ui.add_space(2.0);
+                ui.horizontal(|ui| {
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.model)
+                            .hint_text(self.provider.default_model())
+                            .desired_width(240.0),
+                    );
+                    ui.add_space(8.0);
+                    ui.label(
+                        RichText::new(format!("blank = {}", self.provider.default_model()))
+                            .color(theme::MUTED),
+                    );
+                    if !self.provider.requires_key() {
+                        ui.add_space(8.0);
+                        ui.label(
+                            RichText::new("local backend — no API key needed")
+                                .color(theme::MUTED),
+                        );
+                    }
+                });
+
+                ui.add_space(12.0);
+                ui.horizontal(|ui| {
+                    let gen_enabled = !self.generating;
+                    // Primary accent-pink Generate button.
+                    let gen = egui::Button::new(
+                        RichText::new("Generate").color(Color32::WHITE).strong(),
+                    )
+                    .fill(theme::ACCENT)
+                    .stroke(Stroke::new(1.0, theme::ACCENT))
+                    .min_size(egui::vec2(120.0, 0.0));
+                    let gen_resp = ui.add_enabled(gen_enabled, gen);
+                    if gen_enabled && gen_resp.hovered() {
+                        // Brighten on hover.
+                        ui.painter().rect_filled(
+                            gen_resp.rect,
+                            CornerRadius::same(theme::RADIUS),
+                            Color32::from_white_alpha(26),
+                        );
+                    }
+                    if gen_resp.clicked() {
+                        self.start_generate(ctx);
+                    }
+
+                    let save_enabled = self.last_bytes.is_some() && !self.generating;
+                    // Ghost Save button with teal hover border.
+                    let save = egui::Button::new(
+                        RichText::new("Save…")
+                            .color(if save_enabled { theme::TEXT } else { theme::MUTED }),
+                    )
+                    .fill(Color32::TRANSPARENT)
+                    .stroke(Stroke::new(1.0, theme::LINE));
+                    let save_resp = ui.add_enabled(save_enabled, save);
+                    if save_enabled && save_resp.hovered() {
+                        ui.painter().rect_stroke(
+                            save_resp.rect,
+                            CornerRadius::same(theme::RADIUS),
+                            Stroke::new(1.0, theme::ACCENT2),
+                            egui::StrokeKind::Inside,
+                        );
+                    }
+                    if save_resp.clicked() {
+                        self.save_dialog();
+                    }
+
+                    if self.generating {
+                        ui.add_space(4.0);
+                        ui.add(egui::Spinner::new().color(theme::ACCENT));
+                    }
+                });
+
+                ui.add_space(10.0);
+                ui.colored_label(status_color(&self.status), &self.status);
+                ui.add_space(10.0);
+
+                // --- parameter table --------------------------------------
+                if !self.last_mapped.is_empty() {
+                    let bytes = self.last_bytes.as_ref().map(|b| b.len()).unwrap_or(0);
+                    let meta = format!(
+                        "{} parameters  ·  .{}  ·  {} bytes  ·  {}",
+                        self.last_mapped.len(),
+                        self.synth.extension(),
+                        bytes,
+                        self.last_provider.id(),
+                    );
+                    ui.label(RichText::new(meta).size(12.5).color(theme::MUTED));
+                    ui.add_space(6.0);
+
+                    let card = egui::Frame::new()
+                        .fill(theme::PANEL)
+                        .stroke(Stroke::new(1.0, theme::LINE))
+                        .corner_radius(CornerRadius::same(10))
+                        .inner_margin(egui::Margin::same(12));
+                    card.show(ui, |ui| {
+                        egui::ScrollArea::vertical().show(ui, |ui| {
+                            egui::Grid::new("params")
+                                .striped(true)
+                                .num_columns(2)
+                                .min_col_width(240.0)
+                                .spacing(egui::vec2(16.0, 4.0))
+                                .show(ui, |ui| {
+                                    for (k, v) in &self.last_mapped {
+                                        ui.monospace(RichText::new(k).color(theme::MONO));
+                                        let (val, color) = match v {
+                                            ParamValue::Num(_) => (format_value(v), theme::ACCENT2),
+                                            _ => (format_value(v), theme::ACCENT),
+                                        };
+                                        ui.with_layout(
+                                            egui::Layout::right_to_left(egui::Align::Center),
+                                            |ui| {
+                                                ui.monospace(RichText::new(val).color(color));
+                                            },
+                                        );
+                                        ui.end_row();
+                                    }
+                                });
+                        });
+                    });
+                } else {
+                    ui.add_space(4.0);
+                    ui.label(
+                        RichText::new(
+                            "No preset generated yet. Enter a prompt above and click Generate. \
+                             You'll need an API key for the selected provider (Settings).",
+                        )
+                        .color(theme::MUTED),
+                    );
+                }
+            });
     }
 }
 
@@ -375,17 +517,34 @@ impl App {
     /// The API-key settings window: one key row per provider.
     fn settings_window(&mut self, ctx: &egui::Context) {
         let mut open = self.show_settings;
-        egui::Window::new("Settings — API keys")
+        // Opaque card frame (same style as the parameters table) so the window
+        // reads as a solid panel instead of letting the rack bleed through.
+        let win_frame = egui::Frame::new()
+            .fill(theme::PANEL)
+            .stroke(Stroke::new(1.0, theme::LINE))
+            .corner_radius(CornerRadius::same(12))
+            .inner_margin(egui::Margin::same(16))
+            .shadow(egui::epaint::Shadow {
+                offset: [0, 8],
+                blur: 24,
+                spread: 0,
+                color: Color32::from_black_alpha(140),
+            });
+        egui::Window::new(RichText::new("Settings — API keys").color(theme::TEXT))
             .open(&mut open)
             .resizable(false)
             .collapsible(false)
+            .frame(win_frame)
             .show(ctx, |ui| {
                 ui.label(
-                    "Bring your own API keys. Each is stored in your OS keychain \
-                     (service \"deepsynth-preset\") and never written to disk in plaintext.",
+                    RichText::new(
+                        "Bring your own API keys. Each is stored in your OS keychain \
+                         (service \"deepsynth-preset\") and never written to disk in plaintext.",
+                    )
+                    .color(theme::MUTED),
                 );
                 ui.add_space(6.0);
-                ui.label(egui::RichText::new(&self.key_status).italics());
+                ui.colored_label(status_color(&self.key_status), &self.key_status);
                 ui.separator();
 
                 Self::provider_key_row(
@@ -403,11 +562,41 @@ impl App {
                     &mut self.gemini_key_input,
                     &mut self.key_status,
                 );
+                ui.add_space(8.0);
+                Self::provider_key_row(
+                    ui,
+                    Provider::OPENAI,
+                    "sk-…",
+                    &mut self.openai_key_input,
+                    &mut self.key_status,
+                );
+                ui.add_space(8.0);
+                Self::provider_key_row(
+                    ui,
+                    Provider::OPENROUTER,
+                    "sk-or-…",
+                    &mut self.openrouter_key_input,
+                    &mut self.key_status,
+                );
 
                 ui.add_space(6.0);
-                ui.weak(
-                    "A provider's environment variable (ANTHROPIC_API_KEY / GEMINI_API_KEY, \
-                     also GOOGLE_API_KEY) takes priority over the keychain if set.",
+                ui.label(
+                    RichText::new(
+                        "A provider's environment variable (ANTHROPIC_API_KEY / GEMINI_API_KEY / \
+                         OPENAI_API_KEY / OPENROUTER_API_KEY) takes priority over the keychain if set.",
+                    )
+                    .size(11.5)
+                    .color(theme::MUTED),
+                );
+                ui.add_space(4.0);
+                ui.label(
+                    RichText::new(
+                        "Local backends — Ollama (localhost:11434) and LM Studio (localhost:1234) — \
+                         need no key. Override their host with OLLAMA_BASE_URL / LMSTUDIO_BASE_URL, \
+                         and set the model above (e.g. llama3.1).",
+                    )
+                    .size(11.5)
+                    .color(theme::MUTED),
                 );
             });
         self.show_settings = open;
@@ -467,10 +656,28 @@ fn key_status_for(provider: Provider) -> String {
             format!("{} key found in the OS keychain.", provider.label())
         }
         Some((_, KeySource::Explicit)) => format!("{} key set.", provider.label()),
+        None if !provider.requires_key() => {
+            format!("{} is a local backend — no API key needed.", provider.label())
+        }
         None => format!(
             "No {} API key found. Open Settings to add one.",
             provider.label()
         ),
+    }
+}
+
+/// Pick a status-line color: teal for success / engine output, pink for
+/// warnings and errors, muted for the neutral idle prompt.
+fn status_color(status: &str) -> Color32 {
+    let s = status.to_ascii_lowercase();
+    if s.contains("fail") || s.contains("could not") || s.starts_with("no ") || s.contains("please")
+        || s.contains("nothing")
+    {
+        theme::ACCENT // pink warning / error
+    } else if s.contains("generated") || s.contains("saved") {
+        theme::ACCENT2 // teal success
+    } else {
+        theme::MUTED // neutral / in-progress
     }
 }
 

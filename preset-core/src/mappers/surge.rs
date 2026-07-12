@@ -92,12 +92,12 @@ pub const SURGE_SPECS: &[ParamSpec] = &[
         .with_note("Ring-mod 2x3 mixer level; a non-zero value auto-unmutes the ring mod."),
     // Filter 1
     ParamSpec::enum_("filter1_type", FILTER_TYPES),
-    ParamSpec::logarithmic("filter1_cutoff", 20.0, 20000.0, 1000.0)
+    ParamSpec::exponential("filter1_cutoff", 20.0, 20000.0, 1000.0, 3.0)
         .with_note("Cutoff in Hz; stored as Surge's 12*log2(hz/440) semitone offset."),
     ParamSpec::linear("filter1_resonance", 0.0, 1.0, 0.2),
     // Filter 2
     ParamSpec::enum_("filter2_type", FILTER_TYPES),
-    ParamSpec::logarithmic("filter2_cutoff", 20.0, 20000.0, 1000.0)
+    ParamSpec::exponential("filter2_cutoff", 20.0, 20000.0, 1000.0, 3.0)
         .with_note("Cutoff in Hz; stored as Surge's 12*log2(hz/440) semitone offset."),
     ParamSpec::linear("filter2_resonance", 0.0, 1.0, 0.2),
     // Filter routing
@@ -107,40 +107,40 @@ pub const SURGE_SPECS: &[ParamSpec] = &[
     ParamSpec::linear("filter_feedback", 0.0, 1.0, 0.0)
         .with_note("Filter feedback amount (0..1, positive half of Surge's bipolar feedback)."),
     // Amp Envelope
-    ParamSpec::logarithmic("amp_attack", 0.001, 10.0, 0.01)
+    ParamSpec::exponential("amp_attack", 0.001, 10.0, 0.01, 2.0)
         .with_note("Seconds; stored as log2(seconds)."),
-    ParamSpec::logarithmic("amp_decay", 0.001, 10.0, 0.1)
+    ParamSpec::exponential("amp_decay", 0.001, 10.0, 0.1, 2.0)
         .with_note("Seconds; stored as log2(seconds)."),
     ParamSpec::linear("amp_sustain", 0.0, 1.0, 0.7),
-    ParamSpec::logarithmic("amp_release", 0.001, 10.0, 0.3)
+    ParamSpec::exponential("amp_release", 0.001, 10.0, 0.3, 2.0)
         .with_note("Seconds; stored as log2(seconds)."),
     // Filter Envelope
-    ParamSpec::logarithmic("filter_attack", 0.001, 10.0, 0.01)
+    ParamSpec::exponential("filter_attack", 0.001, 10.0, 0.01, 2.0)
         .with_note("Seconds; stored as log2(seconds)."),
-    ParamSpec::logarithmic("filter_decay", 0.001, 10.0, 0.1)
+    ParamSpec::exponential("filter_decay", 0.001, 10.0, 0.1, 2.0)
         .with_note("Seconds; stored as log2(seconds)."),
     ParamSpec::linear("filter_sustain", 0.0, 1.0, 0.5),
-    ParamSpec::logarithmic("filter_release", 0.001, 10.0, 0.3)
+    ParamSpec::exponential("filter_release", 0.001, 10.0, 0.3, 2.0)
         .with_note("Seconds; stored as log2(seconds)."),
     ParamSpec::linear("filter_env_depth", -1.0, 1.0, 0.5)
         .with_note("-1..1, scaled to ±60 semitones of cutoff sweep (filter 1 envmod)."),
     // LFO 1
     ParamSpec::enum_("lfo1_shape", LFO_SHAPES),
-    ParamSpec::logarithmic("lfo1_rate", 0.01, 20.0, 1.0)
+    ParamSpec::exponential("lfo1_rate", 0.01, 20.0, 1.0, 2.0)
         .with_note("Rate in Hz; stored as log2(Hz)."),
     ParamSpec::linear("lfo1_phase", 0.0, 360.0, 0.0)
         .with_note("Start phase in degrees; stored as a 0..1 fraction of one cycle."),
     ParamSpec::linear("lfo1_deform", -1.0, 1.0, 0.0),
     // LFO 2
     ParamSpec::enum_("lfo2_shape", LFO_SHAPES),
-    ParamSpec::logarithmic("lfo2_rate", 0.01, 20.0, 1.0)
+    ParamSpec::exponential("lfo2_rate", 0.01, 20.0, 1.0, 2.0)
         .with_note("Rate in Hz; stored as log2(Hz)."),
     ParamSpec::linear("lfo2_phase", 0.0, 360.0, 0.0)
         .with_note("Start phase in degrees; stored as a 0..1 fraction of one cycle."),
     ParamSpec::linear("lfo2_deform", -1.0, 1.0, 0.0),
     // LFO 3
     ParamSpec::enum_("lfo3_shape", LFO_SHAPES),
-    ParamSpec::logarithmic("lfo3_rate", 0.01, 20.0, 1.0)
+    ParamSpec::exponential("lfo3_rate", 0.01, 20.0, 1.0, 2.0)
         .with_note("Rate in Hz; stored as log2(Hz)."),
     ParamSpec::linear("lfo3_phase", 0.0, 360.0, 0.0)
         .with_note("Start phase in degrees; stored as a 0..1 fraction of one cycle."),
@@ -157,7 +157,7 @@ pub const SURGE_SPECS: &[ParamSpec] = &[
     ParamSpec::linear("master_volume", 0.0, 1.0, 0.7).with_note("Scene A output volume (0..1)."),
     ParamSpec::discrete("pitch_bend_range", 0.0, 24.0, 2.0, 1.0)
         .with_note("Semitones; applied to both up and down bend range."),
-    ParamSpec::linear("portamento_time", 0.0, 1.0, 0.0)
+    ParamSpec::exponential("portamento_time", 0.0, 1.0, 0.0, 2.0)
         .with_note("Glide time in seconds; 0 = off (Surge portamento minimum)."),
     // Character
     ParamSpec::enum_("character", &["warm", "neutral", "bright"]),
