@@ -21,6 +21,10 @@ HTTPS (rustls-tls).
 > legally reference and port the GPL-3.0 Surge XT patch-format code so that the
 > generated `.fxp` files actually load in Surge XT. See `LICENSES.md`.
 
+Author: [LeGott](https://legott.ai) ([hi@legott.ai](mailto:hi@legott.ai))
+
+- If you want to follow more AI-based synth experiments, subscribe to [backpropagated.ai](https://backpropagated.ai).
+
 ---
 
 ## What it does
