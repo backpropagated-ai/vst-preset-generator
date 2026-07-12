@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# Copyright (c) 2026 DeepSynth AI
+[package]
+name = "preset-wasm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "wasm-bindgen bindings over preset-core's prompt-independent parameter mapping and preset writers, for the browser-only static preset generator."
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# The pure mapping + writers core — no reqwest, no keyring (llm feature off).
+preset-core = { path = "../preset-core", default-features = false }
+serde = { workspace = true }
+serde_json = { workspace = true }
+wasm-bindgen = "0.2"

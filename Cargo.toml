@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# Copyright (c) 2026 DeepSynth AI
+[workspace]
+resolver = "2"
+members = [
+    "preset-core",
+    "preset-wasm",
+    "deepsynth-preset-cli",
+    "deepsynth-preset-app",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-only"
+authors = ["DeepSynth AI"]
+repository = "https://github.com/backpropagated-ai/deepsynth-vst-preset-generator"
+rust-version = "1.75"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+thiserror = "1"

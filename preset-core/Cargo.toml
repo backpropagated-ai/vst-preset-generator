@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# Copyright (c) 2026 DeepSynth AI
+[package]
+name = "preset-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Text-prompt-independent parameter mapping and preset file writers for Surge XT (.fxp), Dexed/DX7 (.syx) and Vital (.vital), plus a raw-HTTPS Anthropic (Claude) client for text-to-preset generation."
+
+[features]
+# The `llm` feature pulls in the online halves of the crate: the Claude/Gemini
+# HTTP clients and OS-keychain key resolution (reqwest + keyring). It is on by
+# default so the CLI and desktop app behave identically. Building with
+# `--no-default-features` yields a pure, wasm-compatible mapping + writers core
+# (no reqwest, no keyring) — that is what `preset-wasm` compiles against.
+default = ["llm"]
+llm = ["dep:reqwest", "dep:keyring"]
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+# Raw HTTPS to the Anthropic Messages API (rustls-tls, no OpenSSL). `llm` only.
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"], optional = true }
+# OS keychain for the "bring your own key" storage (service `deepsynth-preset`). `llm` only.
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"], optional = true }
+
+[dev-dependencies]
+tempfile = "3"

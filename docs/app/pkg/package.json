@@ -1,0 +1,24 @@
+{
+  "name": "preset-wasm",
+  "type": "module",
+  "collaborators": [
+    "DeepSynth AI"
+  ],
+  "description": "wasm-bindgen bindings over preset-core's prompt-independent parameter mapping and preset writers, for the browser-only static preset generator.",
+  "version": "0.1.0",
+  "license": "GPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/backpropagated-ai/deepsynth-vst-preset-generator"
+  },
+  "files": [
+    "preset_wasm_bg.wasm",
+    "preset_wasm.js",
+    "preset_wasm.d.ts"
+  ],
+  "main": "preset_wasm.js",
+  "types": "preset_wasm.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

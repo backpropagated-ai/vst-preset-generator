@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# Dependency vulnerability audit: runs cargo-audit against the RustSec
+# advisory database on every push/PR that touches dependencies, plus weekly
+# so newly published advisories are caught without a code change.
+name: Security audit
+
+on:
+  push:
+    paths:
+      - "**/Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/audit.yml"
+  pull_request:
+    paths:
+      - "**/Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/audit.yml"
+  schedule:
+    - cron: "0 3 * * 1" # Mondays 03:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write # rustsec/audit-check opens an issue on scheduled-run findings
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}

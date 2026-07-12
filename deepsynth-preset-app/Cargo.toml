@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# Copyright (c) 2026 DeepSynth AI
+[package]
+name = "deepsynth-preset-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "DeepSynth Preset — native egui desktop app for AI text-to-preset generation (bring your own Anthropic API key)."
+
+[[bin]]
+name = "deepsynth-preset-app"
+path = "src/main.rs"
+
+[dependencies]
+image = { version = "0.25", default-features = false, features = ["png"] }
+# egui-wgpu pulls wgpu without platform backends; enable Metal (macOS) plus GL
+# fallback explicitly so the wgpu renderer can actually start.
+wgpu = { version = "27", default-features = false, features = ["metal", "gles"] }
+preset-core = { path = "../preset-core" }
+serde_json = { workspace = true }
+# eframe ~0.33 to match the repo toolchain. Standalone — no patchbee deps.
+eframe = { version = "0.33", default-features = false, features = ["default_fonts", "glow", "wgpu", "persistence"] }
+egui = "0.33"
+# Native save-file dialog.
+rfd = "0.15"

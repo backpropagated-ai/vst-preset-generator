@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DeepSynth Preset — text-to-preset for Surge XT, Dexed &amp; Vital</title>
+<meta name="description" content="Describe a sound in plain language and get a real, loadable synth preset. Bring your own Claude or Gemini API key. GPL-3.0, no server, no telemetry.">
+<style>
+  :root {
+    --bg: #0b0b12;
+    --bg2: #12121d;
+    --panel: #171725;
+    --line: #26263a;
+    --text: #e8e6f0;
+    --muted: #9a96b0;
+    --accent: #e0507a;
+    --accent2: #56d8c9;
+    --mono: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    line-height: 1.6;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 0 24px; }
+
+  nav {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 0; border-bottom: 1px solid var(--line);
+  }
+  .brand { font-weight: 700; letter-spacing: .02em; }
+  .brand em { color: var(--accent); font-style: normal; }
+  nav a.gh {
+    color: var(--text); text-decoration: none; font-size: 14px;
+    border: 1px solid var(--line); padding: 7px 14px; border-radius: 8px;
+  }
+  nav a.gh:hover { border-color: var(--accent); }
+
+  header.hero { padding: 72px 0 48px; text-align: left; position: relative; overflow: hidden; }
+  .hero h1 { font-size: clamp(30px, 5vw, 52px); line-height: 1.12; letter-spacing: -.015em; }
+  .hero h1 .grad {
+    background: linear-gradient(92deg, var(--accent) 0%, var(--accent2) 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .hero p.sub { margin-top: 18px; font-size: 18px; color: var(--muted); max-width: 640px; }
+  .badges { margin-top: 20px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .badge {
+    font-size: 12.5px; font-family: var(--mono); color: var(--muted);
+    border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px;
+  }
+  .badge b { color: var(--accent2); font-weight: 600; }
+
+  .term {
+    margin-top: 36px; background: #0d0d15; border: 1px solid var(--line);
+    border-radius: 12px; overflow: hidden; box-shadow: 0 18px 50px rgba(0,0,0,.45);
+  }
+  .term .bar { display: flex; gap: 6px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  .term .dot { width: 11px; height: 11px; border-radius: 50%; background: #33334a; }
+  .term pre {
+    padding: 18px 20px; font-family: var(--mono); font-size: 13.5px;
+    line-height: 1.75; overflow-x: auto; color: #cfcbe4;
+  }
+  .term .c { color: #6f6a8a; } .term .p { color: var(--accent2); } .term .s { color: #eec777; }
+
+  section { padding: 56px 0 8px; }
+  section h2 { font-size: 24px; margin-bottom: 10px; letter-spacing: -.01em; }
+  section p.lead { color: var(--muted); max-width: 700px; margin-bottom: 28px; }
+
+  .shot { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; box-shadow: 0 24px 60px rgba(0,0,0,.5); }
+  .shot img { display: block; width: 100%; height: auto; }
+  .cap { font-size: 13px; color: var(--muted); margin-top: 10px; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin-top: 26px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+  .card h3 { font-size: 16px; margin-bottom: 8px; }
+  .card h3 span { color: var(--accent); margin-right: 8px; font-family: var(--mono); font-size: 14px; }
+  .card p { font-size: 14px; color: var(--muted); }
+  .card code { font-family: var(--mono); font-size: 12.5px; color: var(--accent2); }
+
+  table { width: 100%; border-collapse: collapse; margin-top: 22px; font-size: 14.5px; }
+  th, td { text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; }
+  td b { color: var(--accent2); font-weight: 600; }
+  td .ext { font-family: var(--mono); font-size: 13px; color: var(--accent); }
+
+  .story { border-left: 3px solid var(--accent); background: var(--bg2); border-radius: 0 12px 12px 0; padding: 22px 26px; margin-top: 26px; }
+  .story p { font-size: 15px; color: var(--text); }
+  .story p + p { margin-top: 12px; }
+  .story .muted { color: var(--muted); font-size: 14px; }
+
+  pre.block {
+    background: #0d0d15; border: 1px solid var(--line); border-radius: 10px;
+    font-family: var(--mono); font-size: 13.5px; line-height: 1.7; padding: 16px 18px;
+    overflow-x: auto; color: #cfcbe4; margin-top: 16px;
+  }
+  footer {
+    margin-top: 72px; padding: 30px 0 44px; border-top: 1px solid var(--line);
+    color: var(--muted); font-size: 13.5px;
+  }
+  footer a { color: var(--accent2); text-decoration: none; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 26px; }
+  @media (max-width: 760px) { .two { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <nav>
+    <div class="brand">Deep<em>Synth</em> Preset</div>
+    <a class="gh" href="https://github.com/backpropagated-ai/deepsynth-vst-preset-generator">GitHub&nbsp;→</a>
+  </nav>
+
+  <header class="hero">
+    <h1>Describe a sound.<br><span class="grad">Get a real synth preset.</span></h1>
+    <p class="sub">A text prompt in, a loadable preset file out — for Surge&nbsp;XT, Dexed and Vital.
+    Bring your own Claude or Gemini API key. No server, no account, no telemetry.</p>
+    <div class="badges">
+      <span class="badge"><b>GPL-3.0</b> open source</span>
+      <span class="badge">Rust · <b>egui</b> native app + CLI</span>
+      <span class="badge">BYO-key: <b>Claude</b> / <b>Gemini</b></span>
+    </div>
+    <p style="margin-top:22px;">
+      <a href="app/" style="display:inline-block; background:linear-gradient(92deg, var(--accent) 0%, #c9426b 100%);
+        color:#fff; text-decoration:none; font-weight:700; font-size:15px; padding:12px 24px; border-radius:10px;">
+        Try it in your browser&nbsp;→</a>
+      <span style="color:var(--muted); font-size:13.5px; margin-left:12px;">No key, no install — selectable on-device models, multilingual prompts, optional WebGPU LLM.</span>
+    </p>
+    <div class="term">
+      <div class="bar"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+      <pre><span class="c"># one prompt → one preset</span>
+<span class="p">$</span> deepsynth-preset <span class="s">"dark hypnotic warehouse techno bass, grinding and analog"</span> \
+    --synth surge --provider gemini -o warehouse_bass.fxp
+Generating surge preset via gemini (gemini-3.5-flash)...
+Wrote warehouse_bass.fxp (29 KB, 64 parameters)
+
+<span class="c"># drop it into Surge XT — it just loads</span></pre>
+    </div>
+  </header>
+
+  <section>
+    <h2>The desktop app</h2>
+    <p class="lead">Type a prompt, pick a synth and a provider, hit Generate. Every parameter the
+    model chose is shown before you save the file. API keys live in your OS keychain.</p>
+    <div class="shot"><img src="assets/app_generated.png" alt="DeepSynth Preset app right after generating a Surge XT patch with Gemini"></div>
+    <p class="cap">Live generation with Gemini 3.5 Flash — the model picked a ladder filter with drive
+    and a tight envelope for “grinding and analog”.</p>
+  </section>
+
+  <section>
+    <h2>Or generate one right here, in your browser</h2>
+    <p class="lead">No API key and no install. A tiny embedding model
+    (<code style="font-family:var(--mono);font-size:13px;color:var(--accent2)">all-MiniLM-L6-v2</code>, ~23&nbsp;MB)
+    runs on your own machine and matches your words to a hand-authored sound-design bank; the same Rust
+    preset writers — compiled to WebAssembly — produce the real, loadable file. Runs entirely client-side;
+    nothing is uploaded anywhere.</p>
+    <p style="margin-top:4px;">
+      <a href="app/" style="display:inline-block; background:linear-gradient(92deg, var(--accent) 0%, #c9426b 100%);
+        color:#fff; text-decoration:none; font-weight:700; font-size:15px; padding:12px 24px; border-radius:10px;">
+        Open the in-browser generator&nbsp;→</a>
+    </p>
+  </section>
+
+  <section>
+    <h2>Supported synths</h2>
+    <table>
+      <tr><th>Synth</th><th>Format</th><th>What actually lands in the file</th></tr>
+      <tr>
+        <td><b>Surge XT</b> <span class="ext">.fxp</span></td>
+        <td>Native <code style="font-family:var(--mono);font-size:13px">FPCh/cjs3</code> patch chunk with Surge’s real XML document</td>
+        <td>64 parameters across oscillators, mixer, filters, envelopes, LFOs and global — plus real
+        <i>modulation routings</i> (LFO→cutoff, env→pitch, velocity→cutoff), written in Surge’s
+        internal units and verified to load in Surge XT 1.3.4.</td>
+      </tr>
+      <tr>
+        <td><b>Dexed / DX7</b> <span class="ext">.syx</span></td>
+        <td>155-byte DX7 voice SysEx</td>
+        <td>The full 6-operator FM voice — 164 parameters, byte-identical to the reference implementation,
+        checksum verified.</td>
+      </tr>
+      <tr>
+        <td><b>Vital</b> <span class="ext">.vital</span></td>
+        <td>Vital JSON preset</td>
+        <td>56 parameters: 3 oscillators, 2 filters, envelopes, LFOs and the core effects.</td>
+      </tr>
+    </table>
+  </section>
+
+  <section>
+    <h2>Why the files actually load</h2>
+    <p class="lead">Most “AI preset generators” write a file that looks like a preset. This project obsesses
+    over the part after the model answers.</p>
+    <div class="grid">
+      <div class="card">
+        <h3><span>01</span>Real formats, from the source</h3>
+        <p>The Surge XT writer implements Surge’s actual patch container — reverse-engineered from the
+        GPL source, not guessed. Parameters are stored in Surge’s internal units: cutoff as semitones
+        from 440&nbsp;Hz, envelope times as <code>log2(seconds)</code>, pitch decomposed into octave + semitone.</p>
+      </div>
+      <div class="card">
+        <h3><span>02</span>Schema-constrained generation</h3>
+        <p>Each synth’s parameter table generates a JSON Schema, and the LLM is forced to answer inside it
+        (structured outputs). Out-of-range values are clamped, missing ones fall back to sane defaults —
+        the output is always a valid parameter set.</p>
+      </div>
+      <div class="card">
+        <h3><span>03</span>Tested against the real thing</h3>
+        <p>Every encoding has a unit test citing the Surge source line it was derived from. Generated
+        patches are load-tested headlessly with <code>surge-xt-cli</code>, and the DX7 writer is
+        byte-parity-tested against the original implementation.</p>
+      </div>
+    </div>
+    <div class="story">
+      <p><b>A war story:</b> the legacy version of this code embedded a JSON blob inside the FXP wrapper.
+      Files were produced, extensions matched, everyone was happy — except Surge XT, which can’t read
+      them at all. And once the real format was implemented, a patch that asked for an octave-down bass
+      was silently playing a fifth down instead: Surge stores oscillator pitch in a ±7 semitone field.</p>
+      <p class="muted">Both bugs were only found by loading generated files into the real synth. That’s why
+      verification against the actual instrument is a design principle here, not an afterthought.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Quick start</h2>
+    <div class="two">
+      <div>
+        <h3 style="font-size:16px; margin-bottom:4px;">Build from source</h3>
+        <pre class="block">git clone https://github.com/backpropagated-ai/deepsynth-vst-preset-generator
+cd deepsynth-vst-preset-generator
+cargo build --release
+
+# CLI
+./target/release/deepsynth-preset --help
+# Desktop app
+./target/release/deepsynth-preset-app</pre>
+      </div>
+      <div>
+        <h3 style="font-size:16px; margin-bottom:4px;">Bring your own key</h3>
+        <pre class="block"># either provider works
+export ANTHROPIC_API_KEY=sk-ant-…
+export GEMINI_API_KEY=…
+
+deepsynth-preset "ethereal evolving pad" \
+  --synth vital -o pad.vital
+
+# offline mode (no API): write a preset
+# from a params JSON, or dump the schema
+deepsynth-preset --defaults --synth surge -o init.fxp
+deepsynth-preset --schema surge</pre>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <p>DeepSynth Preset is free software under <a href="https://www.gnu.org/licenses/gpl-3.0.html">GPL-3.0</a>.
+    The Surge XT patch-format implementation is derived from the
+    <a href="https://github.com/surge-synthesizer/surge">Surge XT</a> source (GPL-3.0) with attribution —
+    see LICENSES.md. Surge XT, Dexed and Vital are trademarks of their respective projects; this tool is not
+    affiliated with or endorsed by them. No presets from any third-party library are bundled or redistributed.</p>
+    <p style="margin-top:10px;">© 2026 DeepSynth AI · <a href="https://github.com/backpropagated-ai/deepsynth-vst-preset-generator">Source on GitHub</a></p>
+  </footer>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: GPL-3.0-only
+/target
+**/*.rs.bk
+Cargo.lock.orig
+
+# Generated presets (never bundle third-party presets)
+*.fxp
+*.syx
+*.vital
+
+# OS / editor cruft
+.DS_Store
+*.swp
+
+# Docs site assets are real content (parent repo ignores *.png globally)
+!docs/assets/*.png

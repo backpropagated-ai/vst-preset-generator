@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# Copyright (c) 2026 DeepSynth AI
+[package]
+name = "deepsynth-preset-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "CLI for DeepSynth Presets: text-prompt-to-preset generation for Surge XT, Dexed/DX7 and Vital (bring your own Anthropic API key)."
+
+[[bin]]
+name = "deepsynth-preset"
+path = "src/main.rs"
+
+[dependencies]
+preset-core = { path = "../preset-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+clap = { version = "4", features = ["derive"] }

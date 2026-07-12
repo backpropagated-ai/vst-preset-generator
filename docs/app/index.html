@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<!--
+  SPDX-License-Identifier: GPL-3.0-only
+  Copyright (c) 2026 DeepSynth AI
+
+  Browser-only preset generator. Everything runs client-side: a small embedding
+  model (all-MiniLM-L6-v2 via transformers.js) streams from the Hugging Face
+  CDN, a hand-authored anchor bank maps the prompt to normalized parameters, and
+  a WASM build of preset-core writes the real .fxp / .syx / .vital. No server of
+  ours, no API endpoint of ours, nothing uploaded.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DeepSynth Preset — in-browser generator</title>
+<meta name="description" content="Describe a sound and get a real, loadable Surge XT / Dexed / Vital preset — entirely in your browser. No server, no key, nothing uploaded.">
+<style>
+  :root {
+    --bg: #0b0b12;
+    --bg2: #12121d;
+    --panel: #171725;
+    --line: #26263a;
+    --text: #e8e6f0;
+    --muted: #9a96b0;
+    --accent: #e0507a;
+    --accent2: #56d8c9;
+    --mono: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    line-height: 1.6;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 0 24px; }
+
+  nav {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 0; border-bottom: 1px solid var(--line);
+  }
+  .brand { font-weight: 700; letter-spacing: .02em; }
+  .brand em { color: var(--accent); font-style: normal; }
+  nav a { color: var(--text); text-decoration: none; font-size: 14px;
+    border: 1px solid var(--line); padding: 7px 14px; border-radius: 8px; }
+  nav a:hover { border-color: var(--accent); }
+
+  header.hero { padding: 44px 0 24px; }
+  .hero h1 { font-size: clamp(26px, 4.5vw, 40px); line-height: 1.14; letter-spacing: -.015em; }
+  .hero h1 .grad {
+    background: linear-gradient(92deg, var(--accent) 0%, var(--accent2) 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .hero p.sub { margin-top: 14px; font-size: 17px; color: var(--muted); max-width: 640px; }
+
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+    padding: 22px; margin-top: 26px; }
+  label.field { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: .07em;
+    color: var(--muted); margin-bottom: 8px; font-weight: 600; }
+  textarea#prompt {
+    width: 100%; min-height: 78px; resize: vertical; background: #0d0d15;
+    color: var(--text); border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px 14px; font-family: inherit; font-size: 15px; line-height: 1.5;
+  }
+  textarea#prompt:focus, input#name:focus, select:focus { outline: none; border-color: var(--accent); }
+
+  .row { display: flex; gap: 16px; margin-top: 16px; flex-wrap: wrap; }
+  .row .col { flex: 1 1 200px; }
+  select, input#name {
+    width: 100%; background: #0d0d15; color: var(--text); border: 1px solid var(--line);
+    border-radius: 10px; padding: 10px 12px; font-family: inherit; font-size: 15px;
+  }
+
+  .actions { display: flex; gap: 12px; align-items: center; margin-top: 20px; flex-wrap: wrap; }
+  button {
+    font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;
+    border: none; border-radius: 10px; padding: 12px 22px; transition: transform .05s ease, filter .15s ease;
+  }
+  button:active { transform: translateY(1px); }
+  button.primary { background: linear-gradient(92deg, var(--accent) 0%, #c9426b 100%); color: #fff; }
+  button.primary:hover { filter: brightness(1.08); }
+  button.primary:disabled { opacity: .5; cursor: default; filter: none; }
+  button.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); }
+  button.ghost:hover { border-color: var(--accent2); }
+  button.ghost:disabled { opacity: .4; cursor: default; }
+
+  .status { font-size: 13.5px; color: var(--muted); min-height: 20px; }
+  .status .engine { font-family: var(--mono); color: var(--accent2); }
+  .status .warnpill { color: var(--accent); }
+  .bar-wrap { height: 6px; background: #0d0d15; border-radius: 4px; overflow: hidden; margin-top: 10px;
+    border: 1px solid var(--line); display: none; }
+  .bar-wrap.show { display: block; }
+  .bar { height: 100%; width: 0%; background: linear-gradient(92deg, var(--accent) 0%, var(--accent2) 100%);
+    transition: width .2s ease; }
+
+  .results { margin-top: 26px; display: none; }
+  .results.show { display: block; }
+  .results h2 { font-size: 18px; margin-bottom: 6px; }
+  .results .meta { font-size: 13.5px; color: var(--muted); margin-bottom: 16px; }
+  .results .meta b { color: var(--accent2); font-weight: 600; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+  td.k { font-family: var(--mono); color: var(--text); }
+  td.v { font-family: var(--mono); color: var(--accent2); text-align: right; }
+  .tablewrap { max-height: 380px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; }
+
+  .err { color: var(--accent); font-size: 14px; margin-top: 14px; display: none; }
+  .err.show { display: block; }
+
+  footer { margin-top: 56px; padding: 26px 0 40px; border-top: 1px solid var(--line);
+    color: var(--muted); font-size: 13px; }
+  footer a { color: var(--accent2); text-decoration: none; }
+  .examples { margin-top: 10px; font-size: 13px; color: var(--muted); }
+  .examples button {
+    background: #0d0d15; border: 1px solid var(--line); color: var(--muted); font-size: 12.5px;
+    font-weight: 500; padding: 5px 11px; border-radius: 999px; margin: 4px 6px 0 0;
+  }
+  .examples button:hover { border-color: var(--accent2); color: var(--text); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav>
+    <div class="brand">Deep<em>Synth</em> Preset</div>
+    <a href="../index.html">← Home</a>
+  </nav>
+
+  <header class="hero">
+    <h1>Describe a sound.<br><span class="grad">Generate a preset in your browser.</span></h1>
+    <p class="sub">No server, no API key, nothing uploaded. Pick an on-device model — from a 23&nbsp;MB embedding
+    matcher to a multilingual model to a WebGPU instruct LLM that fills the parameters directly —
+    and a WebAssembly build of the real preset writers produces a loadable file.</p>
+  </header>
+
+  <div class="panel">
+    <label class="field" for="prompt">Describe the sound</label>
+    <textarea id="prompt" placeholder="e.g. dark evolving pad, slow and washy with lots of movement"></textarea>
+    <div class="examples">
+      Try:
+      <button data-ex="deep round sub bass for hip hop">sub bass</button>
+      <button data-ex="squelchy resonant acid bass, aggressive 303">acid bass</button>
+      <button data-ex="warm lush analog pad, soft and wide">warm pad</button>
+      <button data-ex="bright plucky lead, short and snappy">pluck lead</button>
+      <button data-ex="glassy crystalline FM bell, sparkling long decay">bells</button>
+      <button data-ex="noisy riser sweep, tension builder">riser fx</button>
+    </div>
+
+    <div class="row">
+      <div class="col">
+        <label class="field" for="synth">Synth</label>
+        <select id="synth"></select>
+      </div>
+      <div class="col">
+        <label class="field" for="model">Model (on-device)</label>
+        <select id="model"></select>
+      </div>
+      <div class="col">
+        <label class="field" for="name">Preset name</label>
+        <input id="name" type="text" value="DeepSynth Patch" spellcheck="false">
+      </div>
+    </div>
+
+    <div class="actions">
+      <button id="generate" class="primary" disabled>Generate</button>
+      <button id="download" class="ghost" disabled>Download</button>
+    </div>
+    <div class="bar-wrap" id="barwrap"><div class="bar" id="bar"></div></div>
+    <div class="status" id="status" style="margin-top:12px;">Loading the WebAssembly core…</div>
+    <div class="err" id="err"></div>
+  </div>
+
+  <div class="results" id="results">
+    <h2>Mapped parameters</h2>
+    <div class="meta" id="resultmeta"></div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Parameter</th><th style="text-align:right;">Normalized value</th></tr></thead>
+        <tbody id="paramrows"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <footer>
+    <p>Runs entirely in your browser — the selected on-device model streams from the Hugging Face CDN;
+    nothing is uploaded anywhere. GPL-3.0. The preset writers are the same Rust code the
+    <a href="../index.html">desktop app and CLI</a> use, compiled to WebAssembly.</p>
+    <p style="margin-top:10px;">© 2026 DeepSynth AI ·
+    <a href="https://github.com/backpropagated-ai/deepsynth-vst-preset-generator">Source on GitHub</a></p>
+  </footer>
+</div>
+
+<script type="module">
+  import initWasm, { synths, schema_json, build_preset, preset_file_extension } from "./pkg/preset_wasm.js";
+  import {
+    loadModel, embedAnchors, paramsFromPromptModel, paramsFromPromptKeyword,
+    loadLLM, llmReadyFor, paramsFromPromptLLM, lastModelDebug,
+  } from "./generator.js";
+  import { MODEL_REGISTRY, DEFAULT_MODEL_ID, modelById, webgpuAvailable } from "./models.js";
+
+  const $ = (id) => document.getElementById(id);
+  const els = {
+    prompt: $("prompt"), synth: $("synth"), name: $("name"), model: $("model"),
+    generate: $("generate"), download: $("download"),
+    status: $("status"), err: $("err"), bar: $("bar"), barwrap: $("barwrap"),
+    results: $("results"), resultmeta: $("resultmeta"), paramrows: $("paramrows"),
+  };
+
+  // Loaded-model state. Embedding pipelines are swapped in place (generator.js
+  // caches anchor embeddings per model); the LLM pipeline loads once on demand.
+  // Loads are serialized through a mutex so switching models while the default
+  // is still downloading WAITS instead of silently falling back to keywords.
+  let readyEmbeddingId = null; // registry id whose embeddings are ready
+  let lastBytes = null;
+  let lastFilename = null;
+  let loadMutex = Promise.resolve();
+  function withLoadLock(fn) {
+    const run = loadMutex.then(fn, fn);
+    loadMutex = run.then(() => {}, () => {});
+    return run;
+  }
+
+  function setStatus(html) { els.status.innerHTML = html; }
+  function showErr(msg) { els.err.textContent = msg; els.err.classList.add("show"); }
+  function clearErr() { els.err.classList.remove("show"); els.err.textContent = ""; }
+  function setProgress(frac) {
+    if (frac === null) { els.barwrap.classList.remove("show"); return; }
+    els.barwrap.classList.add("show");
+    els.bar.style.width = Math.round(frac * 100) + "%";
+  }
+  function selectedModel() { return modelById(els.model.value); }
+
+  // 1. Init the WASM core, the synth selector, and the model selector.
+  async function boot() {
+    await initWasm();
+    const list = JSON.parse(synths());
+    for (const s of list) {
+      const opt = document.createElement("option");
+      opt.value = s.id; opt.textContent = s.name + "  (." + s.extension + ")";
+      els.synth.appendChild(opt);
+    }
+
+    const gpu = webgpuAvailable();
+    const saved = localStorage.getItem("ds_model_id") || DEFAULT_MODEL_ID;
+    for (const m of MODEL_REGISTRY) {
+      const opt = document.createElement("option");
+      opt.value = m.id;
+      const needsGpu = m.kind === "llm" && !gpu;
+      opt.textContent = needsGpu ? m.label + " — requires WebGPU" : m.label;
+      opt.disabled = needsGpu;
+      if (needsGpu) opt.title = "This browser does not expose WebGPU (navigator.gpu).";
+      els.model.appendChild(opt);
+    }
+    const savedDef = modelById(saved);
+    els.model.value = (savedDef.kind === "llm" && !gpu) ? DEFAULT_MODEL_ID : savedDef.id;
+
+    els.generate.disabled = false;
+    setStatus('WebAssembly core ready. Engine: <span class="engine">keyword matching</span> ' +
+      '(the selected on-device model loads on your first Generate).');
+    // Preload the default embedding model in the background; keyword works meanwhile.
+    if (selectedModel().kind === "embedding") ensureEmbedding(selectedModel());
+  }
+
+  function ensureEmbedding(def) {
+    return withLoadLock(async () => {
+      if (readyEmbeddingId === def.id) return true;
+      try {
+        setStatus(`Loading <span class="engine">${def.shortName}</span> (~${def.sizeMB}&nbsp;MB, one time)…`);
+        setProgress(0.02);
+        await loadModel(def, ({ progress }) => {
+          if (typeof progress === "number") setProgress(Math.max(0.02, progress / 100));
+        });
+        setStatus("Embedding the sound-design bank…");
+        await embedAnchors();
+        readyEmbeddingId = def.id;
+        setProgress(null);
+        setStatus(`On-device model ready. Engine: <span class="engine">semantic embeddings</span> (${def.shortName}).`);
+        return true;
+      } catch (e) {
+        setProgress(null);
+        setStatus('Engine: <span class="engine">keyword matching</span> ' +
+          '<span class="warnpill">(model unavailable — offline or CDN blocked)</span>.');
+        console.warn("Embedding model failed to load; using keyword fallback.", e);
+        return false;
+      }
+    });
+  }
+
+  function ensureLLM(def) {
+    return withLoadLock(async () => {
+      if (llmReadyFor(def.id)) return true;
+      try {
+        setStatus(`Loading <span class="engine">${def.shortName}</span> (~${def.sizeMB}&nbsp;MB, one time, WebGPU)…`);
+        setProgress(0.02);
+        await loadLLM(def, ({ progress }) => {
+          if (typeof progress === "number") setProgress(Math.max(0.02, progress / 100));
+        });
+        setProgress(null);
+        setStatus(`On-device model ready. Engine: <span class="engine">direct generation</span> (${def.shortName}, WebGPU).`);
+        return true;
+      } catch (e) {
+        setProgress(null);
+        setStatus('<span class="warnpill">LLM failed to load</span> — falling back to ' +
+          '<span class="engine">keyword matching</span>.');
+        console.warn("LLM failed to load.", e);
+        return false;
+      }
+    });
+  }
+
+  function onModelChange() {
+    const def = selectedModel();
+    localStorage.setItem("ds_model_id", def.id);
+    clearErr();
+    if (def.kind === "embedding") {
+      if (readyEmbeddingId === def.id) {
+        setStatus(`Engine: <span class="engine">semantic embeddings</span> (${def.shortName}).`);
+      } else {
+        setStatus(`<span class="engine">${def.shortName}</span> (~${def.sizeMB}&nbsp;MB) loads on your next Generate.`);
+      }
+    } else {
+      setStatus(llmReadyFor(def.id)
+        ? `Engine: <span class="engine">direct generation</span> (${def.shortName}, WebGPU).`
+        : `<span class="engine">${def.shortName}</span> (~${def.sizeMB}&nbsp;MB, WebGPU) loads on your next Generate.`);
+    }
+  }
+
+  function sanitize(name) {
+    const cleaned = (name || "").replace(/[^A-Za-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "");
+    return cleaned || "preset";
+  }
+
+  // 2. Generate: prompt -> normalized params -> WASM -> file bytes + table.
+  async function generate() {
+    clearErr();
+    const prompt = els.prompt.value.trim();
+    if (!prompt) { showErr("Enter a description first."); return; }
+    const synth = els.synth.value;
+    const name = els.name.value.trim() || "DeepSynth Patch";
+    const def = selectedModel();
+
+    els.generate.disabled = true;
+    els.download.disabled = true;
+    els.results.classList.remove("show");
+
+    try {
+      let engine = null;
+      let params = null;
+
+      if (def.kind === "llm") {
+        if (await ensureLLM(def)) {
+          try {
+            setStatus(`Generating with <span class="engine">${def.shortName}</span>…`);
+            params = await paramsFromPromptLLM(synth, prompt, schema_json(synth));
+            engine = `direct generation (${def.shortName}, WebGPU)`;
+          } catch (e) {
+            console.warn("LLM generation failed; falling back.", e);
+          }
+        }
+        // LLM missing or degenerate output → try the small default embedding
+        // model before resorting to keywords.
+        if (!params && (await ensureEmbedding(modelById(DEFAULT_MODEL_ID)))) {
+          params = await paramsFromPromptModel(synth, prompt);
+          engine = `semantic embeddings (fallback from ${def.shortName})`;
+          setStatus('<span class="warnpill">LLM output unusable</span> — fell back to ' +
+            '<span class="engine">semantic embeddings</span>.');
+        }
+      } else if (await ensureEmbedding(def)) {
+        params = await paramsFromPromptModel(synth, prompt);
+        engine = `semantic embeddings (${def.shortName})`;
+        window.__lastModelDebug = lastModelDebug; // test/debug hook
+      }
+
+      if (!params) {
+        params = paramsFromPromptKeyword(synth, prompt);
+        engine = "keyword matching";
+      }
+
+      const bytes = build_preset(synth, JSON.stringify(params), name);
+      lastBytes = bytes;
+      const ext = preset_file_extension(synth);
+      lastFilename = sanitize(name) + "." + ext;
+
+      renderResults(synth, engine, params, bytes.length, ext);
+      els.download.disabled = false;
+    } catch (e) {
+      showErr("Generation failed: " + (e && e.message ? e.message : e));
+      console.error(e);
+    } finally {
+      els.generate.disabled = false;
+    }
+  }
+
+  function renderResults(synth, engine, params, byteLen, ext) {
+    const keys = Object.keys(params).sort();
+    els.resultmeta.innerHTML =
+      `<b>${keys.length}</b> parameters · <b>.${ext}</b> · <b>${byteLen.toLocaleString()}</b> bytes · ` +
+      `engine: <b>${engine}</b>`;
+    els.paramrows.textContent = "";
+    for (const k of keys) {
+      const v = params[k];
+      // textContent, never innerHTML: enum string values on the LLM path are
+      // raw model output and must not reach an HTML sink.
+      const tr = document.createElement("tr");
+      const tdK = document.createElement("td");
+      tdK.className = "k";
+      tdK.textContent = k;
+      const tdV = document.createElement("td");
+      tdV.className = "v";
+      tdV.textContent = typeof v === "number" ? v.toFixed(3) : String(v);
+      tr.append(tdK, tdV);
+      els.paramrows.appendChild(tr);
+    }
+    els.results.classList.add("show");
+  }
+
+  // 3. Download the last generated bytes via a Blob (no upload).
+  function download() {
+    if (!lastBytes) return;
+    const blob = new Blob([lastBytes], { type: "application/octet-stream" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = lastFilename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  }
+
+  els.generate.addEventListener("click", generate);
+  els.download.addEventListener("click", download);
+  els.model.addEventListener("change", onModelChange);
+  for (const b of document.querySelectorAll(".examples button")) {
+    b.addEventListener("click", () => { els.prompt.value = b.dataset.ex; els.prompt.focus(); });
+  }
+
+  boot().catch((e) => {
+    setStatus("");
+    showErr("Failed to load the WebAssembly core: " + (e && e.message ? e.message : e));
+    console.error(e);
+  });
+</script>
+</body>
+</html>
