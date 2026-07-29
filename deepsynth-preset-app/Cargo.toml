@@ -18,7 +18,7 @@ path = "src/main.rs"
 image = { version = "0.25", default-features = false, features = ["png"] }
 # egui-wgpu pulls wgpu without platform backends; enable Metal (macOS) plus GL
 # fallback explicitly so the wgpu renderer can actually start.
-wgpu = { version = "27", default-features = false, features = ["metal", "gles"] }
+wgpu = { version = "30", default-features = false, features = ["metal", "gles"] }
 preset-core = { path = "../preset-core" }
 serde_json = { workspace = true }
 # eframe ~0.33 to match the repo toolchain. Standalone — no patchbee deps.
